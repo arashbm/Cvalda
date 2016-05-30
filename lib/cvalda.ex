@@ -6,6 +6,7 @@ defmodule Cvalda do
 
     children = [
       worker(Cvalda.Watchlist, [[]], []),
+      worker(Cvalda.UpdateQueue, [[]], []),
       supervisor(Cvalda.ResourceSupervisor, [[]], [])
     ]
 
