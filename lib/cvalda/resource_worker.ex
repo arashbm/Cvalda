@@ -31,11 +31,35 @@ defmodule Cvalda.ResourceWorker do
     case res do
       nil ->
         :ok
-      [^queue, key] ->
-        Logger.info "Performing request for URI #{inspect key}"
+      [^queue, uri] ->
+        Logger.info "Performing request for URI #{inspect uri}"
+        proccess_resource(state[:redis], uri)
     end
 
     send self(), :get_job
     {:noreply, state}
+  end
+
+  defp proccess_resource(redis, uri) do
+    case Cvalda.Resource.get_resource(redis, uri) do
+      :not_found -> :ok
+      {headers, etag, last_fetched} ->
+        fetch_resource(redis, uri, headers, etag, last_fetched)
+    end
+  end
+
+  defp fetch_resource(redis, uri, headers, etag, _last_fetched) do
+    time = :os.system_time(:seconds)
+    case Cvalda.Resource.fetch(uri, headers, etag) do
+      :not_modified -> :ok
+      {:ok, new_etag, resp_headers, body} ->
+        Cvalda.Resource.set_resource(redis, uri, headers, new_etag, time)
+        #TODO: send off update to amqp
+        :ok
+      {:error, reason} ->
+        #TODO: hardcode?!
+        Cvalda.Watchlist.reschedule(uri, :os.system_time(:seconds)+10)
+        {:error, reason}
+    end
   end
 end

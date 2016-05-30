@@ -1,8 +1,26 @@
 defmodule Cvalda.Resource do
+
+  @spec get_resource(GenServer.server, binary) :: :not_found |
+                                        {binary, [{}], binary, integer}
+  def get_resource(redis, uri) do
+    case Redix.command(redis, ["GET", uri]) do
+      {:ok, nil} -> :not_found
+      {:ok, val} ->
+        {headers, etag, last_fetch} = :erlang.binary_to_term(val)
+        {uri, headers, etag, last_fetch}
+    end
+  end
+
+  @spec set_resource(GenServer.server, binary, [{}], binary, integer) :: :ok
+  def set_resource(redis, uri, headers, etag, last_fetch) do
+    bin = :erlang.term_to_binary({headers, etag, last_fetch})
+    :ok = Redix.command(redis, ["SET", uri, bin])
+  end
+
   @spec fetch(binary, [{}], binary) :: :not_modified |
                                         {:ok, binary, [{}], binary} |
                                         {:error, term}
-  def fetch(uri, req_headers, etag) do
+  defp fetch(uri, req_headers, etag) do
     req_headers = set_etag(req_headers, etag)
     res = :httpc.request(:get, {uri, req_headers},
                           [timeout: 10, connect_timeout: 15],

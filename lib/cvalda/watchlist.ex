@@ -10,6 +10,10 @@ defmodule Cvalda.Watchlist do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
+  def reschedule(key, time) do
+    GenServer.call(__MODULE__, {:reschedule, key, time})
+  end
+
   ## GenServer Callback
 
   def init(opts) do
@@ -42,5 +46,10 @@ defmodule Cvalda.Watchlist do
     end
     Process.send_after self(), :check_scheduler, state[:cooldown]
     {:noreply, state}
+  end
+
+  def handle_call({:reschedule, key, time}, _from, state) do
+    {:ok, _} = Redix.pipeline(state[:redis], ["ZADD", "todo", "XX", time, key])
+    {:reply, :ok}
   end
 end
