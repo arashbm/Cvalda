@@ -1,4 +1,3 @@
-
 defmodule Cvalda.Watchlist do
   use GenServer
   require Logger
@@ -14,6 +13,10 @@ defmodule Cvalda.Watchlist do
     GenServer.call(__MODULE__, {:reschedule, key, time})
   end
 
+  def add_task(key) do
+    GenServer.call(__MODULE__, {:add_task, key})
+  end
+
   ## GenServer Callback
 
   def init(opts) do
@@ -25,6 +28,7 @@ defmodule Cvalda.Watchlist do
 
   def handle_info(:check_scheduler, state) do
     #FIXME there is a chance of adding a job multiple times to queue
+    Process.send_after self(), :check_scheduler, state[:cooldown]
     now = :os.system_time(:seconds)
     redis_command = ["ZRANGEBYSCORE", "todo", "-inf", now]
     {:ok, list} = Redix.command(state[:redis], redis_command)
@@ -44,12 +48,17 @@ defmodule Cvalda.Watchlist do
         #FIXME actually check the results
         Logger.info("Results: #{inspect results}")
     end
-    Process.send_after self(), :check_scheduler, state[:cooldown]
     {:noreply, state}
   end
 
   def handle_call({:reschedule, key, time}, _from, state) do
-    {:ok, _} = Redix.pipeline(state[:redis], ["ZADD", "todo", "XX", time, key])
-    {:reply, :ok}
+    {:ok, _} = Redix.command(state[:redis], ["ZADD", "todo", "XX", time, key])
+    {:reply, :ok, state}
+  end
+
+  def handle_call({:add_task, key}, _from, state) do
+    now = :os.system_time(:seconds)
+    {:ok, _} = Redix.command(state[:redis], ["ZADD", "todo", now, key])
+    {:reply, :ok, state}
   end
 end

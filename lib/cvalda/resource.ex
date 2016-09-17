@@ -1,4 +1,5 @@
 defmodule Cvalda.Resource do
+  require Logger
 
   @spec get_resource(GenServer.server, binary) :: :not_found |
                                         {binary, [{}], binary, integer}
@@ -14,27 +15,37 @@ defmodule Cvalda.Resource do
   @spec set_resource(GenServer.server, binary, [{}], binary, integer) :: :ok
   def set_resource(redis, uri, headers, etag, last_fetch) do
     bin = :erlang.term_to_binary({headers, etag, last_fetch})
-    :ok = Redix.command(redis, ["SET", uri, bin])
+    {:ok, _} = Redix.command(redis, ["SET", uri, bin])
+    :ok
+  end
+
+  @spec new_resource(GenServer.server, binary, [{}]) :: :ok
+  def new_resource(redis, uri, headers) do
+    set_resource(redis, uri, headers, "new", 0)
   end
 
   @spec fetch(binary, [{}], binary) :: :not_modified |
                                         {:ok, binary, [{}], binary} |
                                         {:error, term}
-  defp fetch(uri, req_headers, etag) do
+  def fetch(uri, req_headers, etag) do
     req_headers = set_etag(req_headers, etag)
-    res = :httpc.request(:get, {uri, req_headers},
-                          [timeout: 10, connect_timeout: 15],
+    Logger.info "Performing request for URI #{inspect uri} with headers #{inspect req_headers}"
+    req_headers_char_list = Enum.map(req_headers,
+     fn {k, v} -> {to_char_list(k), to_char_list(v)} end)
+    res = :httpc.request(:get, {to_char_list(uri), req_headers_char_list},
+                          [timeout: 10_000, connect_timeout: 15_000],
                           [sync: true, body_format: :binary])
+    Logger.info "Response for URI #{inspect uri}: #{inspect res}"
     case res do
-      {:ok, {_, 304, _}, _, _} ->
+      {:ok, {{_, 304, _}, _, _}} ->
         :not_modified
-      {:ok, {_, code, _}, headers, body} when code >= 200 and code < 300 ->
+      {:ok, {{_, code, _}, headers, body}} when code >= 200 and code < 300 ->
         etag = case get_etag(headers) do
           :no_etag -> ""
           e -> e
         end
         {:ok, etag, headers, body}
-      {:ok, {_, code, _}, _, _} ->
+      {:ok, {{_, code, _}, _, _}} ->
         {:error, {:http_error, code}}
       {:error, reason} ->
         {:error, reason}

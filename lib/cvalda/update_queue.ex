@@ -27,16 +27,16 @@ defmodule Cvalda.UpdateQueue do
   def handle_call({:dispatch_update, uri, bin}, _from, state) do
     uri_topic = uri_to_topic(uri)
     :ok = AMQP.Basic.publish state[:channel], state[:exchange_name], uri_topic, bin
-    {:reply, :ok}
+    {:reply, :ok, state}
   end
 
   ## Private API
 
   @spec uri_to_topic(binary) :: binary
   defp uri_to_topic(uri) do
-    uri |> String.replace(~r/^https?:\/\//, '')
-        |> String.replace('.', '_')
-        |> String.replace('/', '.')
+    uri |> String.replace(~r/^https?:\/\//, "")
+        |> String.replace(".", "_")
+        |> String.replace("/", ".")
   end
 
   defp connect_amqp(amqp_uri, exchange_name) do
